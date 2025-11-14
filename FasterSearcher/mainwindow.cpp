@@ -4,164 +4,214 @@
 #include <QScrollBar>
 #include <QClipboard>
 #include <QApplication>
+#include <QRegularExpression>
+#include <QFile>
+#include <QDir>
+#include <QMessageBox>
+#include <QDesktopServices>
+#include <QUrl>
 
-
-QString selectedFolder;
-QString searchText;
-QProcess *process = nullptr;
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , process(new QProcess(this))
 {
     ui->setupUi(this);
+    
+    // Initial UI state
     ui->searchTerm->setEnabled(false);
-    ui->lineFolderFilter->setEnabled(false);  // Disabled by default
+    ui->lineFolderFilter->setEnabled(false);
     ui->searchButton->setEnabled(false);
-    ui->finderStatus->setText("waiting...");  // Initial status
+    ui->finderStatus->setText("Stopped");
 
-    process = new QProcess(this);
+    // Process setup
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    process->setReadChannel(QProcess::StandardOutput);
 
-    // Connect to read output in real-time
+    // Connect signals
     connect(process, &QProcess::readyReadStandardOutput, this, &MainWindow::onProcessReadyRead);
-    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MainWindow::onProcessFinished);
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            this, &MainWindow::onProcessFinished);
+    connect(process, &QProcess::errorOccurred, this, &MainWindow::onProcessError);
     
-    // Connect list item click to copy path
-    connect(ui->listTable, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        QApplication::clipboard()->setText(item->text());
-        qDebug() << "Copied to clipboard:" << item->text();
+    connect(ui->listTable, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        QString path = item->text();
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        ui->overallAppStatus->setText("Oppened: "+ path);
     });
-    
-    // Connect scrollbar to detect manual scrolling
-    connect(ui->listTable->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
-        // If user scrolls away from top, disable auto-scroll
-        QScrollBar *scrollBar = ui->listTable->verticalScrollBar();
-        if (value > 10) {  // More than 10px from top
-            autoScroll = false;
-        } else {
-            autoScroll = true;  // Re-enable if user scrolls back to top
-        }
-    });
+        
+    // Auto-scroll management
+    connect(ui->listTable->verticalScrollBar(), &QScrollBar::valueChanged, 
+            this, &MainWindow::onScrollChanged);
 }
-MainWindow::~MainWindow(){
-    if (process && process->state() == QProcess::Running) {
-        process->kill();  // Clean up
+
+MainWindow::~MainWindow()
+{
+    if (process->state() == QProcess::Running) {
+        process->kill();
+        process->waitForFinished(1000);
     }
     delete ui;
 }
 
-void MainWindow::on_actionButton_clicked(){
-    qDebug() << "Action button clicked";
-    // Open folder selection dialog
+void MainWindow::on_actionButton_clicked()
+{
     selectedFolder = QFileDialog::getExistingDirectory(
         this,
-        tr("Select Folder"),  // Dialog title
-        QDir::homePath(),     // Default directory (user's home)
+        tr("Select Folder"),
+        "L:/",  // Start at network drive
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
     );
 
-    if(!selectedFolder.isEmpty()){
+    if (!selectedFolder.isEmpty()) {
         ui->folderName->setText(selectedFolder);
         ui->searchTerm->setEnabled(true);
         ui->searchButton->setEnabled(true);
+        ui->searchTerm->setFocus();  // Auto-focus for quick typing
     }
-
 }
 
-void MainWindow::on_searchTerm_returnPressed(){
-    searchText = ui->searchTerm->text();
-    qDebug() << "Searching for:" << searchText;
+void MainWindow::on_searchTerm_returnPressed()
+{
+    ui->overallAppStatus->setText("Search began.");
+    startSearch();
+}
 
-    if (selectedFolder.isEmpty() || searchText.isEmpty()) return;
+void MainWindow::on_searchButton_clicked()
+{
+    ui->overallAppStatus->setText("Search began.");
+    startSearch();
+}
 
-    // Clear previous results
-    ui->listTable->clear();
+void MainWindow::startSearch()
+{
+    QString searchText = ui->searchTerm->text().trimmed();
+    
+    if (selectedFolder.isEmpty() || searchText.isEmpty()) {
+        return;
+    }
 
-    // Kill any running process
+    // Stop any running search
     if (process->state() == QProcess::Running) {
         process->kill();
-        process->waitForFinished();
+        process->waitForFinished(500);
     }
     
-    // Build the command arguments
+    ui->listTable->clear();
+    autoScroll = true;
+    ui->finderStatus->setText("Running");
+
+    // Build fd.exe arguments
     QStringList args;
     args << "-i";  // Case-insensitive
     
-    // If folder filter is enabled, use --full-path to filter by folder name
+    // Folder filter (if enabled)
     if (ui->folderFilter->isChecked() && !ui->lineFolderFilter->text().isEmpty()) {
-        QString folderPattern = ui->lineFolderFilter->text();
         args << "-p";  // Match against full path
-        args << (".*" + folderPattern + ".*" + searchText);  // Regex: any path containing folderPattern, then searchText
-        qDebug() << "Folder filter active. Pattern:" << folderPattern;
+        args << (".*" + ui->lineFolderFilter->text() + ".*" + searchText);
     } else {
-        args << searchText;  // What to search for (normal mode)
+        args << searchText;
     }
     
-    args << selectedFolder;  // Base directory (no wildcards)
+    args << selectedFolder;
+
+    // Get fd.exe path (must be in same directory as executable)
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString fdPath = QDir::cleanPath(appDir + "/fd.exe");
     
-    // Log the command for comparison
-    qDebug() << "Running command: fdfind" << args.join(" ");
-    qDebug() << "Arguments passed to fdfind:";
-    for (int i = 0; i < args.size(); ++i) {
-        qDebug() << "  arg[" << i << "]:" << args[i];
+    qDebug() << "Application directory:" << appDir;
+    qDebug() << "Looking for fd.exe at:" << fdPath;
+    qDebug() << "fd.exe exists:" << QFile::exists(fdPath);
+    qDebug() << "Search command:" << fdPath << args.join(" ");
+    
+    if (!QFile::exists(fdPath)) {
+        QString errorMsg = QString("ERROR: fd.exe not found at:\n%1").arg(fdPath);
+        ui->finderStatus->setText("fd.exe not found!");
+        qDebug() << errorMsg;
+        QMessageBox::critical(this, "Error", errorMsg);
+        return;
     }
     
-    // Re-enable auto-scroll for new search
-    autoScroll = true;
+    // Start the process
+    process->start(fdPath, args);
     
-    // Start fd-find command
-    process->start("fdfind", args);
-    
-    // Update status
-    ui->finderStatus->setText("running");
+    // Wait a moment to see if it starts
+    if (!process->waitForStarted(1000)) {
+        QString errorMsg = QString("Failed to start fd.exe\nError: %1\nState: %2")
+            .arg(process->errorString())
+            .arg(process->state());
+        ui->finderStatus->setText("Failed to start fd.exe");
+        qDebug() << errorMsg;
+        QMessageBox::critical(this, "Error", errorMsg);
+        return;
+    }
 }
 
-void MainWindow::on_searchButton_clicked(){
-    on_searchTerm_returnPressed();
-}
-
-void MainWindow::on_stopButton_clicked(){
-    qDebug() << "Stop button clicked";
-    
-    // Kill the running process
-    if (process && process->state() == QProcess::Running) {
+void MainWindow::on_stopButton_clicked()
+{
+    if (process->state() == QProcess::Running) {
         process->kill();
-        process->waitForFinished();
-        ui->finderStatus->setText("stopped");
-        qDebug() << "Process stopped";
+        process->waitForFinished(500);
+        ui->finderStatus->setText("Stopped");
+        ui->overallAppStatus->setText("Search stopped.");
+
     }
 }
 
-void MainWindow::on_folderFilter_toggled(bool checked){
-    // Enable/disable the folder filter line edit based on checkbox
+void MainWindow::on_folderFilter_toggled(bool checked)
+{
     ui->lineFolderFilter->setEnabled(checked);
-    qDebug() << "Folder filter checkbox toggled:" << checked;
+    ui->overallAppStatus->setText("Folder filtering activated.");
 }
 
-void MainWindow::onProcessReadyRead(){
-    // Read new output as it arrives
-    QString newOutput = process->readAllStandardOutput();
-    QStringList lines = newOutput.split('\n', Qt::SkipEmptyParts);
+void MainWindow::onProcessReadyRead()
+{
+    QString output = process->readAllStandardOutput();
+    QStringList lines = output.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
     
-    // Add each new path to the top of the list
+    if (lines.isEmpty()) return;
+
+    // Batch insert for performance
+    ui->listTable->setUpdatesEnabled(false);
+    
     for (const QString &line : lines) {
-        if (!line.isEmpty()) {
-            QListWidgetItem *item = new QListWidgetItem(line);
-            ui->listTable->insertItem(0, item);
+        QString trimmed = line.trimmed();
+        if (!trimmed.isEmpty()) {
+            ui->listTable->insertItem(0, new QListWidgetItem(trimmed));
         }
     }
     
-    // Auto-scroll to top only if user hasn't manually scrolled away
+    ui->listTable->setUpdatesEnabled(true);
+    
     if (autoScroll) {
         ui->listTable->scrollToTop();
     }
 }
 
-void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus){
-    if (exitCode != 0) {
-        qDebug() << "fd-find error:" << process->readAllStandardError();
-    }
-    // Process is done; any remaining output is handled in onProcessReadyRead
+void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    Q_UNUSED(exitStatus);
     
-    // Update status
-    ui->finderStatus->setText("waiting...");
+    // Read any remaining output
+    onProcessReadyRead();
+    
+    if (exitCode != 0) {
+        ui->finderStatus->setText("error");
+        qDebug() << "fd.exe exited with code:" << exitCode;
+    } else {
+        ui->finderStatus->setText("Stopped");
+        ui->overallAppStatus->setText("Search finnished.");
+    }
+}
+
+void MainWindow::onProcessError(QProcess::ProcessError error)
+{
+    ui->finderStatus->setText("ERROR");
+    qDebug() << "Process error:" << error << process->errorString();
+}
+
+void MainWindow::onScrollChanged(int value)
+{
+    // Disable auto-scroll if user manually scrolls away from top
+    autoScroll = (value <= 10);
 }

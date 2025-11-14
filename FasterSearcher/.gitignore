@@ -75,3 +75,12 @@ ui_mainwindow.h
 *.dll
 *.exe
 
+# Unnecessary files for app functionality
+*/.vscode/
+*/.vscode/*
+Installer/
+README
+update_ui.sh
+compile_commands.json
+fd-v10.3.0-x86_64-pc-windows-msvc/
+

@@ -23,14 +23,21 @@ public:
 private slots:
     void on_actionButton_clicked();
     void on_searchTerm_returnPressed();
-    void on_folderFilter_toggled(bool checked);
+    void on_searchButton_clicked();
     void on_stopButton_clicked();
+    void on_folderFilter_toggled(bool checked);
     void onProcessReadyRead();
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
-    void on_searchButton_clicked();
+    void onProcessError(QProcess::ProcessError error);
+    void onScrollChanged(int value);
 
 private:
+    void startSearch();  // Consolidated search logic
+    
     Ui::MainWindow *ui;
-    bool autoScroll = true;  // Track if we should auto-scroll
+    QProcess *process;
+    QString selectedFolder;
+    bool autoScroll = true;
 };
+
 #endif // MAINWINDOW_H
