@@ -34,7 +34,7 @@ When you launch the application, a small terminal window will also appear.
 
 ### Interface Overview
 
-<img width="1152" height="794" alt="image" src="https://github.com/user-attachments/assets/4b3da1eb-12f0-4065-80d1-dd3d9464905b" />
+<img width="996" height="786" alt="image" src="https://github.com/user-attachments/assets/9aa024cd-af60-4a6d-9658-33936086baee" />
 
 **[1] Directory Selector**  
 Choose any folder as your base directory.  
