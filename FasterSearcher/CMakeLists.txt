@@ -9,14 +9,19 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Sql)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql)
 
 set(PROJECT_SOURCES
         main.cpp
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        SearchWorker.cpp
+        SearchWorker.h
+        IndexerDialog.cpp
+        IndexerDialog.h
+        IndexerDialog.ui
 )
 
 # Windows resource file for icon
@@ -47,7 +52,7 @@ else()
     endif()
 endif()
 
-target_link_libraries(GreedSearcher PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(GreedSearcher PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Sql)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
@@ -79,5 +84,8 @@ add_custom_command(TARGET GreedSearcher POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_BINARY_DIR}/GreedSearcher_autogen/include/ui_mainwindow.h
         ${CMAKE_SOURCE_DIR}/ui_mainwindow.h
-    COMMENT "Copying generated ui_mainwindow.h to source directory for Qt Creator"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_BINARY_DIR}/GreedSearcher_autogen/include/ui_IndexerDialog.h
+        ${CMAKE_SOURCE_DIR}/ui_IndexerDialog.h
+    COMMENT "Copying generated UI headers to source directory for Qt Creator"
 )

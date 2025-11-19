@@ -15,10 +15,12 @@
 int main(int argc, char *argv[])
 {
 #ifdef Q_OS_WIN
-    // Allocate console for debugging output
+    // Allocate console for debugging output but hide it initially
     AllocConsole();
     freopen("CONOUT$", "w", stdout);
     freopen("CONOUT$", "w", stderr);
+    HWND consoleWindow = GetConsoleWindow();
+    ShowWindow(consoleWindow, SW_HIDE);
 #endif
 
     QApplication a(argc, argv);

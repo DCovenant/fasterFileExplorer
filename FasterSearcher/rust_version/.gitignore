@@ -1,0 +1,14 @@
+# Rust
+/target/
+Cargo.lock
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
