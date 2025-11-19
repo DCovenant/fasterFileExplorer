@@ -3,6 +3,7 @@
 **Greedy by nature, precise by design.**
 
 GreedSearcher is a lightweight graphical application designed to replace the Windows File Explorer search function. File Explorer's search is slow and unreliable, sometimes missing results we know are there. GreedSearcher searches everything—it's greedy and therefore finds all files matching your specifications.
+This app was created with the objective of having a way to be faster searching networked disks.
 
 ## Installation
 
